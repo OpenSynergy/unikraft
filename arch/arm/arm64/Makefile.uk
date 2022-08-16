@@ -4,13 +4,13 @@
 # the FP & SIMD registers to pass parameters, we use -mgeneral-regs-only
 # flag to force GCC to use generic registers
 ifeq ($(CONFIG_FPSIMD),y)
-ARCHFLAGS     += -D__ARM_64__
+ARCHFLAGS     += -D__ARM_64__ -mno-outline-atomics
 else
-ARCHFLAGS     += -D__ARM_64__ -mgeneral-regs-only
+ARCHFLAGS     += -D__ARM_64__ -mgeneral-regs-only -mno-outline-atomics
 endif
 
 # Disable FPU for trap/exception/interrupt handlers
-ISR_ARCHFLAGS += -D__ARM_64__ -mgeneral-regs-only
+ISR_ARCHFLAGS += -D__ARM_64__ -mgeneral-regs-only -mno-outline-atomics
 
 CINCLUDES   += -I$(CONFIG_UK_BASE)/arch/arm/arm64/include
 ASINCLUDES  += -I$(CONFIG_UK_BASE)/arch/arm/arm64/include
