@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /*
- * Authors: Florian Schmidt <florian.schmidt@neclab.eu>
+ * Authors: Simon Kuenzer <simon.kuenzer@neclab.eu>
  *
- * Copyright (c) 2018, NEC Europe Ltd., NEC Corporation. All rights reserved.
+ * Copyright (c) 2022, NEC Laboratories Europe GmbH, NEC Corporation.
+ *                     All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,7 +30,46 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+/* Derived from https://man7.org/linux/man-pages/man2/clone.2.html */
 
-#include <x86/cpu.h>
+#ifndef _LINUX_SCHED_H_
+#define _LINUX_SCHED_H_
 
-struct _x86_features x86_cpu_features;
+#include <uk/config.h>
+#include <uk/arch/types.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#if CONFIG_LIBPOSIX_PROCESS_CLONE
+/* Clone arguments for SYS_clone3
+ * long syscall(SYS_clone3, struct clone_args *cl_args, size_t size);
+ */
+struct clone_args {
+	__u64 flags;        /* Flags bit mask */
+	__u64 pidfd;        /* Where to store PID file descriptor
+			       (int *) */
+	__u64 child_tid;    /* Where to store child TID,
+			       in child's memory (pid_t *) */
+	__u64 parent_tid;   /* Where to store child TID,
+			       in parent's memory (pid_t *) */
+	__u64 exit_signal;  /* Signal to deliver to parent on
+			       child termination */
+	__u64 stack;        /* Pointer to lowest byte of stack */
+	__u64 stack_size;   /* Size of stack */
+	__u64 tls;          /* Location of new TLS */
+	__u64 set_tid;      /* Pointer to a pid_t array
+			       (since Linux 5.5) */
+	__u64 set_tid_size; /* Number of elements in set_tid
+			       (since Linux 5.5) */
+	__u64 cgroup;       /* File descriptor for target cgroup
+			       of child (since Linux 5.7) */
+};
+#endif /* CONFIG_LIBPOSIX_PROCESS_CLONE */
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* _LINUX_SCHED_H_ */

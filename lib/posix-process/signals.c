@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /*
- * Authors: Costin Lupu <costin.lupu@cs.pub.ro>
+ * Authors: Simon Kuenzer <simon.kuenzer@neclab.eu>
  *
- * Copyright (c) 2019, NEC Europe Ltd., NEC Corporation. All rights reserved.
+ * Copyright (c) 2022, NEC Laboratories Europe GmbH, NEC Corporation.
+ *                     All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,51 +31,39 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __UK_SCHED_THREAD_ATTR_H__
-#define __UK_SCHED_THREAD_ATTR_H__
+#include <uk/config.h>
+#include <uk/arch/lcpu.h>
+#include <uk/process.h>
+#include <uk/print.h>
 
-#include <stdbool.h>
-#include <uk/arch/time.h>
-
-#ifdef __cplusplus
-extern "C" {
+/* Workaround for libc's that do not provide recent CLONE_CLEAR_SIGHAND */
+#ifndef CLONE_CLEAR_SIGHAND
+#define CLONE_CLEAR_SIGHAND 0x100000000ULL
 #endif
 
-#define UK_THREAD_ATTR_WAITABLE         0
-#define UK_THREAD_ATTR_DETACHED         1
+#if CONFIG_LIBPOSIX_PROCESS_CLONE
+static int uk_posix_clone_sighand(const struct clone_args *cl_args,
+				  size_t cl_args_len __unused,
+				  struct uk_thread *child __unused,
+				  struct uk_thread *parent __unused)
+{
+	/* CLONE_SIGHAND and CLONE_CLEAR_SIGHAND should not be together */
+	if (unlikely((cl_args->flags & (CLONE_SIGHAND | CLONE_CLEAR_SIGHAND))
+		     == (CLONE_SIGHAND | CLONE_CLEAR_SIGHAND)))
+		return -EINVAL;
+	/* CLONE_SIGHAND required CLONE_VM */
+	if (unlikely(!(!(cl_args->flags & CLONE_SIGHAND))
+		     && !(cl_args->flags & CLONE_VM)))
+		return -EINVAL;
+	/* CLONE_THREAD requires CLONE_SIGHAND */
+	if (unlikely(!(!(cl_args->flags & CLONE_THREAD))
+		     && !(cl_args->flags & CLONE_SIGHAND)))
+		return -EINVAL;
 
-#define UK_THREAD_ATTR_PRIO_INVALID     (-1)
-#define UK_THREAD_ATTR_PRIO_MIN         0
-#define UK_THREAD_ATTR_PRIO_MAX         255
-#define UK_THREAD_ATTR_PRIO_DEFAULT     127
-
-#define UK_THREAD_ATTR_TIMESLICE_NIL    0
-
-typedef int prio_t;
-
-typedef struct uk_thread_attr {
-	/* True if thread should detach */
-	bool detached;
-	/* Priority */
-	prio_t prio;
-	/* Time slice in nanoseconds */
-	__nsec timeslice;
-} uk_thread_attr_t;
-
-int uk_thread_attr_init(uk_thread_attr_t *attr);
-int uk_thread_attr_fini(uk_thread_attr_t *attr);
-
-int uk_thread_attr_set_detachstate(uk_thread_attr_t *attr, int state);
-int uk_thread_attr_get_detachstate(const uk_thread_attr_t *attr, int *state);
-
-int uk_thread_attr_set_prio(uk_thread_attr_t *attr, prio_t prio);
-int uk_thread_attr_get_prio(const uk_thread_attr_t *attr, prio_t *prio);
-
-int uk_thread_attr_set_timeslice(uk_thread_attr_t *attr, __nsec timeslice);
-int uk_thread_attr_get_timeslice(const uk_thread_attr_t *attr, __nsec *timeslice);
-
-#ifdef __cplusplus
+	UK_WARN_STUBBED();
+	return 0;
 }
-#endif
 
-#endif /* __UK_SCHED_THREAD_ATTR_H__ */
+UK_POSIX_CLONE_HANDLER(CLONE_SIGHAND | CLONE_CLEAR_SIGHAND, false,
+		       uk_posix_clone_sighand, 0x0);
+#endif /* CONFIG_LIBPOSIX_PROCESS_CLONE */

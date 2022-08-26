@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /*
- * Copyright (c) 2019, NEC Europe Ltd., NEC Corporation. All rights reserved.
+ * Authors: Simon Kuenzer <simon.kuenzer@neclab.eu>
+ *
+ * Copyright (c) 2022, NEC Laboratories Europe GmbH, NEC Corporation.
+ *                     All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,17 +30,19 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef __PLAT_CMN_TLS_H__
-#define __PLAT_CMN_TLS_H__
+#ifndef __PROCESS_H_INTERNAL__
+#define __PROCESS_H_INTERNAL__
 
-#if defined(LINUXUPLAT)
-#include <linuxu/tls.h>
-#elif defined(__X86_64__)
-#include <x86/tls.h>
-#elif defined(__ARM_64__)
-#include <arm/arm64/tls.h>
-#else
-#error "For thread-local storage support, add tls.h for current architecture."
-#endif
+#include <uk/config.h>
+#include <sys/types.h>
+#if CONFIG_LIBPOSIX_PROCESS_PIDS
+#include <uk/thread.h>
+#endif /* CONFIG_LIBPOSIX_PROCESS_PIDS */
 
-#endif /* __PLAT_CMN_TLS_H__ */
+#if CONFIG_LIBPOSIX_PROCESS_PIDS
+struct uk_thread *tid2ukthread(pid_t tid);
+pid_t ukthread2tid(struct uk_thread *thread);
+pid_t ukthread2pid(struct uk_thread *thread);
+#endif /* CONFIG_LIBPOSIX_PROCESS_PIDS */
+
+#endif /* __PROCESS_H_INTERNAL__ */

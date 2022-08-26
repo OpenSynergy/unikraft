@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /*
- * Authors: Costin Lupu <costin.lupu@cs.pub.ro>
+ * Authors: Simon Kuenzer <simon.kuenzer@neclab.eu>
  *
- * Copyright (c) 2018, NEC Europe Ltd., NEC Corporation. All rights reserved.
+ * Copyright (c) 2022, NEC Laboratories Europe GmbH, NEC Corporation.
+ *                     All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,32 +30,50 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef __PLAT_CMN_SW_CTX_H__
-#define __PLAT_CMN_SW_CTX_H__
 
-#ifndef __ASSEMBLY__
-#include <stdint.h>
-#include <uk/plat/thread.h>
+#include <sys/types.h>
+/* FIXME: #include <sys/wait.h> */
+/* FIXME: #include <sys/siginfo.h> */
+#include <uk/syscall.h>
+#include <errno.h>
+#include <stddef.h>
+#include "process.h"
 
-struct sw_ctx {
-	unsigned long sp;	/* Stack pointer */
-	unsigned long ip;	/* Instruction pointer */
-	unsigned long tlsp;	/* thread-local storage pointer */
-	uintptr_t extregs;	/* Pointer to an area to which extended
-				 * registers are saved on context switch.
-				 */
-	uint8_t _extregs[];     /* Reserved memory area for extended
-				 * registers state
-				 */
-};
+/* FIXME: Provide with sys/wait.h */
+struct rusage;
+typedef unsigned int idtype_t;
+typedef unsigned int id_t;
+typedef unsigned int siginfo_t;
 
-void sw_ctx_callbacks_init(struct ukplat_ctx_callbacks *ctx_cbs);
-#endif
+UK_SYSCALL_R_DEFINE(pid_t, wait4, pid_t, pid,
+		    int *, wstatus, int, options,
+		    struct rusage *, rusage)
+{
+	return -ECHILD;
+}
 
-#define OFFSETOF_SW_CTX_SP      0
-#define OFFSETOF_SW_CTX_IP      8
+UK_SYSCALL_R_DEFINE(int, waitid, idtype_t, idtype, id_t, id,
+		    siginfo_t *, infop, int, options)
+{
+	return -ECHILD;
+}
 
-/* TODO This should be better defined in the thread header */
-#define OFFSETOF_UKTHREAD_SW_CTX  16
+#if UK_LIBC_SYSCALLS
+pid_t wait3(int *wstatus, int options, struct rusage *rusage)
+{
+	return uk_syscall_e_wait4((long) -1, (long) wstatus,
+				  (long) options, (long) rusage);
+}
 
-#endif /* __PLAT_CMN_SW_CTX_H__ */
+int waitpid(pid_t pid, int *wstatus, int options)
+{
+	return uk_syscall_e_wait4((long) pid, (long) wstatus,
+				  (long) options, (long) NULL);
+}
+
+int wait(int *wstatus)
+{
+	return uk_syscall_e_wait4((long) -1, (long) wstatus,
+				  (long) 0x0, (long) NULL);
+}
+#endif /* !UK_LIBC_SYSCALLS */

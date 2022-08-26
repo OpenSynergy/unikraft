@@ -2,6 +2,7 @@
 /*
  * Copyright (c) 2009, Citrix Systems, Inc.
  * Copyright (c) 2018, NEC Europe Ltd., NEC Corporation.
+ * Copyright (c) 2021, NEC Laboratories Europe GmbH.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -24,46 +25,60 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
-/* Taken from Mini-OS arch/x86/x86_64.S */
+/* Some parts are derived from Mini-OS arch/x86/x86_64.S */
 
-#include <uk/config.h>
-#include <uk/plat/common/sw_ctx.h>
+#include <uk/arch/ctx.h>
 
 #define ENTRY(X) .globl X ; X :
 
-ENTRY(asm_thread_starter)
-	popq %rdi
-	popq %rbx
-	pushq $0
-	xorq %rbp,%rbp
-	call *%rbx
-	call *uk_sched_thread_exit@GOTPCREL(%rip)
+ENTRY(_ctx_x86_clearregs)
+	/* wipe argument and return registers */
+	xorq %rdi, %rdi
+	xorq %rsi, %rsi
+	xorq %rdx, %rdx
+	xorq %rcx, %rcx
+	xorq %rax, %rax
+	xorq %r8, %r8
+	xorq %r9, %r9
+	xorq %r10, %r10
 
-ENTRY(asm_ctx_start)
-	mov %rdi, %rsp      /* set SP */
-	push %rsi           /* push IP and return */
-	ret
+	/* wipe callee registers */
+	xorq %rbp, %rbp
+	xorq %rbx, %rbx
+	xorq %r12, %r12
+	xorq %r13, %r13
+	xorq %r14, %r14
+	xorq %r15, %r15
 
-ENTRY(asm_sw_ctx_switch)
+	ret		/* jump to entrance function left on stack */
+
+ENTRY(_ctx_x86_call1)
+	popq %rdi	/* load first argument from stack */
+	ret		/* jump to entrance function left on stack */
+
+ENTRY(_ctx_x86_call2)
+	popq %rsi	/* load second argument from stack */
+	popq %rdi	/* load first argument from stack */
+	ret		/* jump to entrance function left on stack */
+
+/*
+ * Do a local context switch
+ */
+ENTRY(ukarch_ctx_switch)
 	pushq %rbp
 	pushq %rbx
 	pushq %r12
 	pushq %r13
 	pushq %r14
 	pushq %r15
-	movq %rsp, OFFSETOF_SW_CTX_SP(%rdi)       /* save ESP */
-	movq OFFSETOF_SW_CTX_SP(%rsi), %rsp       /* restore ESP */
-	lea .Lreturn(%rip), %rbx
-	movq %rbx, OFFSETOF_SW_CTX_IP(%rdi)       /* save EIP */
-	pushq OFFSETOF_SW_CTX_IP(%rsi)            /* restore EIP */
-
-#if CONFIG_LIBUKSIGNAL
-	/* TODO: do we need to save regs? (e.g fpu) */
-	/* stack is aligned here */
-	call uk_sig_handle_signals
-#endif
+	movq %rsp, UKARCH_CTX_OFFSETOF_SP(%rdi)       /* save ESP */
+	movq UKARCH_CTX_OFFSETOF_SP(%rsi), %rsp       /* restore ESP */
+	lea .Lresume(%rip), %rbx
+	movq %rbx, UKARCH_CTX_OFFSETOF_IP(%rdi)       /* save EIP */
+	pushq UKARCH_CTX_OFFSETOF_IP(%rsi)            /* restore EIP (onto stack and then return) */
 	ret
-.Lreturn:
+
+.Lresume:
 	popq %r15
 	popq %r14
 	popq %r13

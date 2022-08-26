@@ -33,6 +33,7 @@
 #ifndef __UK_SCHED_H__
 #define __UK_SCHED_H__
 
+#include <uk/plat/tls.h>
 #include <uk/alloc.h>
 #include <uk/thread.h>
 #include <uk/assert.h>
@@ -48,36 +49,32 @@ struct uk_sched;
 
 struct uk_sched *uk_sched_default_init(struct uk_alloc *a);
 
-extern char _tls_start[], _etdata[], _tls_end[];
-#define have_tls_area() (_tls_end - _tls_start)
 
 extern struct uk_sched *uk_sched_head;
 int uk_sched_register(struct uk_sched *s);
-struct uk_sched *uk_sched_get_default(void);
-int uk_sched_set_default(struct uk_sched *s);
 
+static inline struct uk_sched *uk_sched_current(void)
+{
+	struct uk_thread *th = uk_thread_current();
+
+	if (th)
+		return th->sched;
+	return NULL;
+}
 
 typedef void  (*uk_sched_yield_func_t)
 		(struct uk_sched *s);
 
 typedef int   (*uk_sched_thread_add_func_t)
-		(struct uk_sched *s, struct uk_thread *t,
-			const uk_thread_attr_t *attr);
+		(struct uk_sched *s, struct uk_thread *t);
 typedef void  (*uk_sched_thread_remove_func_t)
 		(struct uk_sched *s, struct uk_thread *t);
 typedef void  (*uk_sched_thread_blocked_func_t)
 		(struct uk_sched *s, struct uk_thread *t);
-typedef void  (*uk_sched_thread_woken_func_t)
+typedef void  (*uk_sched_thread_wokeup_func_t)
 		(struct uk_sched *s, struct uk_thread *t);
 
-typedef int   (*uk_sched_thread_set_prio_func_t)
-		(struct uk_sched *s, struct uk_thread *t, prio_t prio);
-typedef int   (*uk_sched_thread_get_prio_func_t)
-		(struct uk_sched *s, const struct uk_thread *t, prio_t *prio);
-typedef int   (*uk_sched_thread_set_tslice_func_t)
-		(struct uk_sched *s, struct uk_thread *t, int tslice);
-typedef int   (*uk_sched_thread_get_tslice_func_t)
-		(struct uk_sched *s, const struct uk_thread *t, int *tslice);
+typedef int   (*uk_sched_start_t)(struct uk_sched *s, struct uk_thread *main);
 
 struct uk_sched {
 	uk_sched_yield_func_t yield;
@@ -85,21 +82,18 @@ struct uk_sched {
 	uk_sched_thread_add_func_t      thread_add;
 	uk_sched_thread_remove_func_t   thread_remove;
 	uk_sched_thread_blocked_func_t  thread_blocked;
-	uk_sched_thread_woken_func_t    thread_woken;
+	uk_sched_thread_wokeup_func_t   thread_wokeup;
 
-	uk_sched_thread_set_prio_func_t   thread_set_prio;
-	uk_sched_thread_get_prio_func_t   thread_get_prio;
-	uk_sched_thread_set_tslice_func_t thread_set_tslice;
-	uk_sched_thread_get_tslice_func_t thread_get_tslice;
+	uk_sched_start_t sched_start;
 
 	/* internal */
-	bool threads_started;
-	struct uk_thread idle;
+	bool is_started;
+	struct uk_thread_list thread_list;
 	struct uk_thread_list exited_threads;
-	struct ukplat_ctx_callbacks plat_ctx_cbs;
-	struct uk_alloc *allocator;
+	struct uk_alloc *a;       /**< default allocator for struct uk_thread */
+	struct uk_alloc *a_stack; /**< default allocator for stacks */
+	struct uk_alloc *a_uktls; /**< default allocator for TLS+ectx */
 	struct uk_sched *next;
-	void *prv;
 };
 
 /* wrapper functions over scheduler callbacks */
@@ -115,159 +109,199 @@ static inline void uk_sched_yield(void)
 	s->yield(s);
 }
 
-static inline int uk_sched_thread_add(struct uk_sched *s,
-		struct uk_thread *t, const uk_thread_attr_t *attr)
-{
-	int rc;
+int uk_sched_thread_add(struct uk_sched *s, struct uk_thread *t);
 
-	UK_ASSERT(s);
+int uk_sched_thread_remove(struct uk_thread *t);
+
+static inline void uk_sched_thread_blocked(struct uk_thread *t)
+{
+	struct uk_sched *s;
+
 	UK_ASSERT(t);
-	if (attr)
-		t->detached = attr->detached;
-	rc = s->thread_add(s, t, attr);
-	if (rc == 0)
-		t->sched = s;
-	return rc;
-}
+	UK_ASSERT(t->sched);
+	UK_ASSERT(!uk_thread_is_runnable(t));
 
-static inline int uk_sched_thread_remove(struct uk_sched *s,
-		struct uk_thread *t)
-{
-	UK_ASSERT(s);
-	UK_ASSERT(t);
-	UK_ASSERT(t->sched == s);
-	s->thread_remove(s, t);
-	return 0;
-}
-
-static inline void uk_sched_thread_blocked(struct uk_sched *s,
-		struct uk_thread *t)
-{
-	UK_ASSERT(s);
+	s = t->sched;
 	s->thread_blocked(s, t);
 }
 
-static inline void uk_sched_thread_woken(struct uk_sched *s,
-		struct uk_thread *t)
+static inline void uk_sched_thread_wokeup(struct uk_thread *t)
 {
-	UK_ASSERT(s);
-	s->thread_woken(s, t);
-}
 
-static inline int uk_sched_thread_set_prio(struct uk_sched *s,
-		struct uk_thread *t, prio_t prio)
-{
-	UK_ASSERT(s);
+	struct uk_sched *s;
 
-	if (!s->thread_set_prio)
-		return -EINVAL;
+	UK_ASSERT(t);
+	UK_ASSERT(t->sched);
+	UK_ASSERT(uk_thread_is_runnable(t));
 
-	return s->thread_set_prio(s, t, prio);
-}
-
-static inline int uk_sched_thread_get_prio(struct uk_sched *s,
-		const struct uk_thread *t, prio_t *prio)
-{
-	UK_ASSERT(s);
-
-	if (!s->thread_get_prio)
-		return -EINVAL;
-
-	return s->thread_get_prio(s, t, prio);
-}
-
-static inline int uk_sched_thread_set_timeslice(struct uk_sched *s,
-		struct uk_thread *t, int tslice)
-{
-	UK_ASSERT(s);
-
-	if (!s->thread_set_tslice)
-		return -EINVAL;
-
-	return s->thread_set_tslice(s, t, tslice);
-}
-
-static inline int uk_sched_thread_get_timeslice(struct uk_sched *s,
-		const struct uk_thread *t, int *tslice)
-{
-	UK_ASSERT(s);
-
-	if (!s->thread_get_tslice)
-		return -EINVAL;
-
-	return s->thread_get_tslice(s, t, tslice);
+	s = t->sched;
+	s->thread_wokeup(s, t);
 }
 
 /*
  * Internal scheduler functions
  */
-
-struct uk_sched *uk_sched_create(struct uk_alloc *a, size_t prv_size);
-
-void uk_sched_idle_init(struct uk_sched *sched,
-		void *stack, void (*function)(void *));
-
-static inline struct uk_thread *uk_sched_get_idle(struct uk_sched *s)
-{
-	UK_ASSERT(s);
-	return &s->idle;
-}
-
-#define uk_sched_init(s, yield_func, \
+#define uk_sched_init(s, start_func, yield_func, \
 		thread_add_func, thread_remove_func, \
-		thread_blocked_func, thread_woken_func, \
-		thread_set_prio_func, thread_get_prio_func, \
-		thread_set_tslice_func, thread_get_tslice_func) \
+		thread_blocked_func, thread_wokeup_func, \
+		def_allocator) \
 	do { \
+		(s)->sched_start     = start_func; \
 		(s)->yield           = yield_func; \
 		(s)->thread_add      = thread_add_func; \
 		(s)->thread_remove   = thread_remove_func; \
 		(s)->thread_blocked  = thread_blocked_func; \
-		(s)->thread_woken    = thread_woken_func; \
-		(s)->thread_set_prio    = thread_set_prio_func; \
-		(s)->thread_get_prio    = thread_get_prio_func; \
-		(s)->thread_set_tslice  = thread_set_tslice_func; \
-		(s)->thread_get_tslice  = thread_get_tslice_func; \
+		(s)->thread_wokeup   = thread_wokeup_func; \
 		uk_sched_register((s)); \
+		\
+		(s)->a = (def_allocator); \
+		(s)->a_stack = (def_allocator); \
+		(s)->a_uktls = (def_allocator); \
+		UK_TAILQ_INIT(&(s)->thread_list); \
+		UK_TAILQ_INIT(&(s)->exited_threads); \
 	} while (0)
 
 /*
  * Public scheduler functions
  */
 
-void uk_sched_start(struct uk_sched *sched) __noreturn;
+/**
+ * Create a main thread from current context and call thread starter function
+ */
+int uk_sched_start(struct uk_sched *sched);
 
-static inline bool uk_sched_started(struct uk_sched *sched)
-{
-	return sched->threads_started;
-}
+/**
+ * Allocates a uk_thread and assigns it to a scheduler.
+ * Similar to `uk_thread_create_fn0()`, general-purpose registers are reset
+ * on thread start.
+ *
+ * @param s
+ *   Reference to scheduler that will execute the thread after creation (required)
+ * @param fn0
+ *   Thread entry function (required)
+ * @param stack_len
+ *   Size of the thread stack. If set to 0, a default stack size is used
+ *   for the stack allocation.
+ * @param no_uktls
+ *   If set, no memory is allocated for a TLS. Functions must not use
+ *   any TLS variables.
+ * @param no_ectx
+ *   If set, no memory is allocated for saving/restoring extended CPU
+ *   context state (e.g., floating point, vector registers). In such a
+ *   case, no extended context is saved nor restored on thread switches.
+ *   Executed functions must be ISR-safe.
+ * @param name
+ *   Optional name for the thread
+ * @param priv
+ *   Reference to external data that corresponds to this thread
+ * @param dtor
+ *   Destructor that is called when this thread is released
+ * @return
+ *   - (NULL): Allocation failed
+ *   - Reference to created uk_thread
+ */
+struct uk_thread *uk_sched_thread_create_fn0(struct uk_sched *s,
+					     uk_thread_fn0_t fn0,
+					     size_t stack_len,
+					     bool no_uktls,
+					     bool no_ectx,
+					     const char *name,
+					     void *priv,
+					     uk_thread_dtor_t dtor);
 
+/**
+ * Similar to `uk_sched_thread_create_fn0()` but with a thread function
+ * accepting one argument
+ */
+struct uk_thread *uk_sched_thread_create_fn1(struct uk_sched *s,
+					     uk_thread_fn1_t fn1,
+					     void * argp,
+					     size_t stack_len,
+					     bool no_uktls,
+					     bool no_ectx,
+					     const char *name,
+					     void *priv,
+					     uk_thread_dtor_t dtor);
+
+/**
+ * Similar to `uk_sched_thread_create_fn0()` but with a thread function
+ * accepting two arguments
+ */
+struct uk_thread *uk_sched_thread_create_fn2(struct uk_sched *s,
+					     uk_thread_fn2_t fn2,
+					     void * argp0, void *argp1,
+					     size_t stack_len,
+					     bool no_uktls,
+					     bool no_ectx,
+					     const char *name,
+					     void *priv,
+					     uk_thread_dtor_t dtor);
+
+/* Shortcut for creating a thread with default settings */
+#define uk_sched_thread_create(s, fn1, argp, name)		\
+	uk_sched_thread_create_fn1((s), (fn1), (void *) (argp),	\
+				   0x0, false, false,		\
+				   (name), NULL, NULL)
 
 /*
  * Internal thread scheduling functions
  */
 
-struct uk_thread *uk_sched_thread_create(struct uk_sched *sched,
-		const char *name, const uk_thread_attr_t *attr,
-		void (*function)(void *), void *arg);
-void uk_sched_thread_destroy(struct uk_sched *sched,
-		struct uk_thread *thread);
-void uk_sched_thread_kill(struct uk_sched *sched,
-		struct uk_thread *thread);
+/**
+ * Releases self-exited threads (garbage collection)
+ *
+ * @return
+ *   - (0): No work was done
+ *   - (>0): Number of threads that were cleaned up
+ */
+unsigned int uk_sched_thread_gc(struct uk_sched *sched);
 
 static inline
-void uk_sched_thread_switch(struct uk_sched *sched,
-		struct uk_thread *prev, struct uk_thread *next)
+void uk_sched_thread_switch(struct uk_thread *next)
 {
-	ukplat_thread_ctx_switch(&sched->plat_ctx_cbs, prev->ctx, next->ctx);
+	struct uk_thread *prev = __uk_sched_thread_current;
+
+	UK_ASSERT(prev);
+
+	__uk_sched_thread_current = next;
+	prev->tlsp = ukplat_tlsp_get();
+	if (prev->ectx)
+		ukarch_ectx_store(prev->ectx);
+
+	/* Load next TLS and extended registers before context switch.
+	 * This avoids requiring special initialization code for newly
+	 * created threads to do the loading.
+	 */
+	ukplat_tlsp_set(next->tlsp);
+	if (next->ectx)
+		ukarch_ectx_load(next->ectx);
+
+	ukarch_ctx_switch(&prev->ctx, &next->ctx);
 }
+
+#define uk_sched_foreach_thread(sched, itr)				\
+	UK_TAILQ_FOREACH((itr), &(sched)->thread_list, thread_list)
+#define uk_sched_foreach_thread_safe(sched, itr, tmp)			\
+	UK_TAILQ_FOREACH_SAFE((itr), &(sched)->thread_list, thread_list, (tmp))
+
+void uk_sched_dumpk_threads(int klvl, struct uk_sched *s);
 
 /*
  * Public thread scheduling functions
  */
 
 void uk_sched_thread_sleep(__nsec nsec);
+
+/* exits the current thread context */
 void uk_sched_thread_exit(void) __noreturn;
+
+/* exits the current thread and runs the given routine when releasing the
+ * thread from garbage collection context
+ */
+void uk_sched_thread_exit2(uk_thread_gc_t gc_fn, void *gc_argp) __noreturn;
+
+/* terminate another thread */
+void uk_sched_thread_terminate(struct uk_thread *thread);
 
 #ifdef __cplusplus
 }

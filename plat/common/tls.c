@@ -1,8 +1,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /*
  * Authors: Costin Lupu <costin.lupu@cs.pub.ro>
+ *          Simon Kuenzer <simon.kuenzer@neclab.eu>
  *
- * Copyright (c) 2019, University Politehnica of Bucharest. All rights reserved.
+ * Copyright (c) 2018, NEC Europe Ltd., NEC Corporation. All rights reserved.
+ * Copyright (c) 2021, NEC Laboratories Europe GmbH. NEC Corporation.
+ *                     All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,26 +33,25 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <uk/plat/memory.h>
+#include <uk/arch/types.h>
+#include <uk/plat/tls.h>
 
+#if defined(LINUXUPLAT)
+#include <linuxu/tls.h>
+#elif defined(__X86_64__)
+#include <x86/tls.h>
+#elif defined(__ARM_64__)
+#include <arm/arm64/tls.h>
+#else
+#error "For thread-local storage support, add tls.h for current architecture."
+#endif
 
-extern char cpu_intr_stack[];
-extern char cpu_trap_stack[];
-
-void ukplat_stack_set_current_thread(void *thread_addr)
+__uptr ukplat_tlsp_get(void)
 {
-	/*
-	 * TODO We set the current thread on interrupt and traps stack
-	 * as well in order to be consistent when retrieving the current
-	 * thread which is saved on the running thread stack.
-	 *
-	 * This is just a temporary solution and it should be removed
-	 * when we will support stacks of various sizes. The current
-	 * thread will be saved on some global variable, accessible from
-	 * both thread and exception contexts.
-	 */
-	*((unsigned long *) cpu_intr_stack) =
-		(unsigned long) thread_addr;
-	*((unsigned long *) cpu_trap_stack) =
-		(unsigned long) thread_addr;
+	return (__uptr) get_tls_pointer();
+}
+
+void ukplat_tlsp_set(__uptr tlsp)
+{
+	set_tls_pointer(tlsp);
 }
