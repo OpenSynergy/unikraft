@@ -184,7 +184,7 @@ UK_LLSYSCALL_R_DEFINE(int, openat, int, dirfd, const char *, pathname,
 		      int, flags, int, mode)
 {
 	if (pathname[0] == '/' || dirfd == AT_FDCWD) {
-		return uk_syscall_e_open((long int)pathname, flags, mode);
+		return uk_syscall_r_open((long int)pathname, flags, mode);
 	}
 
 	struct vfscore_file *fp;
@@ -205,7 +205,7 @@ UK_LLSYSCALL_R_DEFINE(int, openat, int, dirfd, const char *, pathname,
 	strlcat(p, "/", PATH_MAX);
 	strlcat(p, pathname, PATH_MAX);
 
-	error = uk_syscall_e_open((long int)p, flags, mode);
+	error = uk_syscall_r_open((long int)p, flags, mode);
 
 	vn_unlock(vp);
 	fdrop(fp);
@@ -238,7 +238,7 @@ LFS64(openat);
 
 UK_SYSCALL_DEFINE(int, creat, const char*, pathname, mode_t, mode)
 {
-	return uk_syscall_e_open((long int) pathname,
+	return uk_syscall_r_open((long int) pathname,
 		O_CREAT|O_WRONLY|O_TRUNC, mode);
 }
 
