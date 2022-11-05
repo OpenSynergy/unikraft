@@ -451,6 +451,7 @@ static int uk_9pfs_read(struct vnode *vp, struct vfscore_file *fp,
 	while (!iov->iov_len) {
 		uio->uio_iov++;
 		uio->uio_iovcnt--;
+		iov = uio->uio_iov;
 	}
 
 	rc = uk_9p_read(dev, fid, uio->uio_offset,
@@ -503,6 +504,7 @@ static int uk_9pfs_write(struct vnode *vp, struct uio *uio, int ioflag)
 	while (!iov->iov_len) {
 		uio->uio_iov++;
 		uio->uio_iovcnt--;
+		iov = uio->uio_iov;
 	}
 
 	rc = uk_9p_write(dev, fid, uio->uio_offset,
