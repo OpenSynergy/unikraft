@@ -160,3 +160,9 @@ typedef unsigned int __socklen_t;
 typedef __socklen_t socklen_t;
 #define __DEFINED_socklen_t
 #endif
+
+#if defined(__NEED_sa_family_t) && !defined(__DEFINED_sa_family_t)
+typedef unsigned short __sa_family_t;
+typedef __sa_family_t sa_family_t;
+#define __DEFINED_sa_family_t
+#endif

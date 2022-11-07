@@ -88,3 +88,8 @@ _nolibc_ctype
 
 # errno
 errno
+
+# network
+htons
+nthos
+h_errno
